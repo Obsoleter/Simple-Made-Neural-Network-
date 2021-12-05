@@ -1,3 +1,5 @@
+from typing import Literal, Union
+
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -113,7 +115,7 @@ class Math:
 
 # Training
 class Network:
-    def __init__(self, input: int, layer: int, output: int, epochs: int = 5) -> None:
+    def __init__(self, input: int, layer: int, output: int, epochs: int = 5, gradient_descent: Union[Literal['stochastic'], Literal['default']] = 'default') -> None:
         # Network shape
         self.input = input
         self.layer = layer
@@ -147,9 +149,14 @@ class Network:
 
         # Gradient Descent Params
         self.epochs = epochs
+        self.gradient_descent = gradient_descent
 
     def fit(self, X: np.ndarray, Z: np.ndarray, verbose: bool = False):
         acc = None
+        if self.gradient_descent == 'default':
+            algorithm = self.gradient
+        else:
+            algorithm = self.stochastic_gradient
 
         for epoch in range(1, self.epochs + 1):
             # Feed Network
@@ -162,15 +169,14 @@ class Network:
             Z2 = Math.sigmoid(Y2)
             Z_pred = Z2.copy()
 
-
             # Estimate cost
             entropy = Math.binary_crossentropy(Z, Z_pred)
             cost = entropy.mean()
             acc = Math.accuracy(Z, Z_pred)
 
-            # Stochastic Gradient Descent
-            self.stochastic_gradient(X, Y1, Z1, Y2, Z2, Z)
-
+            # Gradient Descent
+            algorithm(X, Y1, Z1, Y2, Z2, Z)
+            
             # Print info
             if verbose:
                 print(f"Epoch: {str(epoch).ljust(10)}Loss: {str(cost).ljust(25)}Accuracy: {str(acc).ljust(25)}")
@@ -218,6 +224,32 @@ class Network:
             self.B1 -= 0.1 * G1B
             self.B2 -= 0.015 * G2B
 
+    def gradient(self, X: np.ndarray, Y1: np.ndarray, Z1: np.ndarray, Y2: np.ndarray, Z2: np.ndarray, Z: np.ndarray):
+        # Output layer
+        Ld = Math.binary_crossentropy_derivative(Z, Z2)
+        Z2d = Math.sigmoid_derivative(Y2)
+        Y2d = Math.linear_derivative(Z1)
+        
+        D = Ld * Z2d
+        G2 = np.matmul( Y2d.T, D )
+        G2B = D.mean(0)
+
+        # Hidden layer
+        Y2d = Math.linear_derivative(self.W2)
+        Z1d = Math.sigmoid_derivative(Y1)
+        Y1d = Math.linear_derivative(X)
+        
+        D = Z1d * np.matmul( D, Y2d.T )
+        G1 = np.matmul( Y1d.T, D )
+        G1B = D.mean(0)
+
+        # Steps
+        self.W1 -= 0.01 * G1
+        self.W2 -= 0.00008 * G2
+
+        self.B1 -= 0.1 * G1B
+        self.B2 -= 0.015 * G2B
+
 
 # Get MNIST Data
 (X_train, y_train), (X_test, y_test) = load_data()
@@ -225,8 +257,8 @@ class Network:
 X = X_train.reshape(len(X_train), -1).astype('float64')
 y = y_train.reshape(len(X_train), -1)
 
-X = X[:1000].astype('float64')
-y = y[:1000]
+X = X[:2000].astype('float64')
+y = y[:2000]
 
 # Scale
 X /= 255
@@ -234,7 +266,7 @@ y = Math.hot_encoding(y)
 
 
 # NN
-network = Network(784, 100, 10, epochs=200)
+network = Network(784, 100, 10, epochs=500, gradient_descent='default')
 network.fit(X, y, True)
 
 

@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from sklearn.metrics import ConfusionMatrixDisplay
+from sklearn.utils import resample
 from keras.datasets.mnist import load_data
 
 
@@ -113,9 +114,11 @@ class Math:
         return Z
 
 
-# Training
+# Neural Network
 class Network:
-    def __init__(self, input: int, layer: int, output: int, epochs: int = 5, gradient_descent: Union[Literal['stochastic'], Literal['default']] = 'default') -> None:
+    def __init__(self, input: int, layer: int, output: int, epochs: int = 5, 
+            gradient_descent: Union[Literal['stochastic'], Literal['default']] = 'default', sample_ratio: float = 0.01
+        ) -> None:
         # Network shape
         self.input = input
         self.layer = layer
@@ -127,7 +130,6 @@ class Network:
             low=1e-3,
             high=0.7e-2,
         )
-
         self.W2 = np.random.uniform(
             size=(layer, output),
             low=0.2e-2,
@@ -140,7 +142,6 @@ class Network:
             0,
             dtype='float64'
         )
-
         self.B2 = np.full(
             (1, output),
             0,
@@ -150,32 +151,43 @@ class Network:
         # Gradient Descent Params
         self.epochs = epochs
         self.gradient_descent = gradient_descent
+        self.sample_ratio = sample_ratio
 
-    def fit(self, X: np.ndarray, Z: np.ndarray, verbose: bool = False):
+        self.rateW1 = 0.01
+        self.rateW2 = 0.01
+        self.rateB1 = 0.1
+        self.rateB2 = 0.1
+
+    def fit(self, X_full: np.ndarray, Z_full: np.ndarray, verbose: bool = False):
         acc = None
-        if self.gradient_descent == 'default':
-            algorithm = self.gradient
-        else:
-            algorithm = self.stochastic_gradient
+        N = X_full.shape[0]
 
         for epoch in range(1, self.epochs + 1):
             # Feed Network
-            # First layer: Sigmoid
+            # Downsample
+            if self.gradient_descent == 'stochastic':
+                X, Z = resample(X_full, Z_full, n_samples=int(N * self.sample_ratio))
+            else:
+                X = X_full
+                Z = Z_full
+
+            # First layer: ReLU
             Y1 = np.matmul(X, self.W1) + self.B1
-            Z1 = Math.sigmoid(Y1)
+            Z1 = Math.ReLU(Y1)
 
             # Second layer: Sigmoid
             Y2 = np.matmul(Z1, self.W2) + self.B2
             Z2 = Math.sigmoid(Y2)
             Z_pred = Z2.copy()
 
+            # Gradient Descent
+            self.gradient(X, Y1, Z1, Y2, Z2, Z)
+
             # Estimate cost
+            Z_pred = self.predict(X)
             entropy = Math.binary_crossentropy(Z, Z_pred)
             cost = entropy.mean()
             acc = Math.accuracy(Z, Z_pred)
-
-            # Gradient Descent
-            algorithm(X, Y1, Z1, Y2, Z2, Z)
             
             # Print info
             if verbose:
@@ -183,46 +195,68 @@ class Network:
             
         return acc
 
-    def predict(self, X: np.ndarray):
-        # First layer: Sigmoid
+    def predict(self, X: np.ndarray, classify: bool = False):
+        # First layer: ReLU
         Y1 = np.matmul(X, self.W1) + self.B1
-        Z1 = Math.sigmoid(Y1)
+        Z1 = Math.ReLU(Y1)
 
         # Second layer: Sigmoid
         Y2 = np.matmul(Z1, self.W2) + self.B2
         Z2 = Math.sigmoid(Y2)
 
+        if classify:
+            Z2 = Z2.argmax(1).reshape(-1, 1)
+
         return Z2
 
-    def stochastic_gradient(self, X: np.ndarray, Y1: np.ndarray, Z1: np.ndarray, Y2: np.ndarray, Z2: np.ndarray, Z: np.ndarray):
-        samples = Z.shape[0]
+    def cost(self, X: np.ndarray, Z: np.ndarray, W1, B1, W2, B2):
+        # First layer: ReLU
+        Y1 = np.matmul(X, W1) + B1
+        Z1 = Math.ReLU(Y1)
 
-        for sample in range(samples):
-            # Calculate errors for output layer
-            Ld = Math.binary_crossentropy_derivative(Z[sample], Z2[sample])
-            
-            # Get gradient
-            Z2d = Math.sigmoid_derivative(Y2[sample])
-            Y2d = Math.linear_derivative(Z1[sample])
-            G2 = np.matmul( Y2d.reshape(self.layer, 1), (Ld * Z2d).reshape(1, self.output) )
-            G2B = (Ld * Z2d).reshape(1, self.output)
+        # Second layer: Sigmoid
+        Y2 = np.matmul(Z1, W2) + B2
+        Z2 = Math.sigmoid(Y2)
 
-            # Calculate errors for hidden layer
-            Ld = Ld * Z2d * self.W2
-            Ld = Ld.sum(axis=1)
-            
-            # Get Gradient
-            Z1d = Math.sigmoid_derivative(Y1[sample])
-            Y1d = Math.linear_derivative(X[sample])
-            G1 = np.matmul( Y1d.reshape(self.input, 1), (Ld * Z1d).reshape(1, self.layer) )
-            G1B = (Ld * Z1d).reshape(1, self.layer)
+        return Math.binary_crossentropy(Z, Z2).mean()
 
-            # Steps
-            self.W1 -= 0.01 * G1
-            self.W2 -= 0.00008 * G2
+    optimize = True
+    def optimize_cv(self, X: np.ndarray, Z: np.ndarray, G1, G1B, G2, G2B):
+        if self.optimize:
+            self.optimize = False
+        else:
+            return
 
-            self.B1 -= 0.1 * G1B
-            self.B2 -= 0.015 * G2B
+        # Params
+        L1 = [1e0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
+        L2 = [1e0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
+        L1B = [1e0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
+        L2B = [1e0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
+
+        # Get costs
+        cost = self.cost(X, Z, self.W1, self.B1, self.W2, self.B2)
+        best_cost = cost
+        best_params = [0.1, 0.1, 0.1, 0.1]
+
+        for l1 in L1:
+            for l2 in L2:
+                for l1b in L1B:
+                    for l2b in L2B:
+                        W1 = self.W1 - l1 * G1
+                        W2 = self.W2 - l2 * G2
+                        B1 = self.B1 - l1b * G1B
+                        B2 = self.B2 - l2b * G2B
+
+                        param_cost = self.cost(X, Z, W1, B1, W2, B2)
+
+                        if param_cost < best_cost:
+                            best_cost = param_cost
+                            best_params = [l1, l2, l1b, l2b]
+
+        self.rateW1 = best_params[0]
+        self.rateW2 = best_params[1]
+        self.rateB1 = best_params[2]
+        self.rateB2 = best_params[3]
 
     def gradient(self, X: np.ndarray, Y1: np.ndarray, Z1: np.ndarray, Y2: np.ndarray, Z2: np.ndarray, Z: np.ndarray):
         # Output layer
@@ -236,61 +270,53 @@ class Network:
 
         # Hidden layer
         Y2d = Math.linear_derivative(self.W2)
-        Z1d = Math.sigmoid_derivative(Y1)
+        Z1d = Math.ReLU_derivative(Y1)
         Y1d = Math.linear_derivative(X)
         
         D = Z1d * np.matmul( D, Y2d.T )
         G1 = np.matmul( Y1d.T, D )
         G1B = D.mean(0)
 
-        # Steps
-        self.W1 -= 0.01 * G1
-        self.W2 -= 0.00008 * G2
+        # Optimizer
+        self.optimize_cv(X, Z, G1, G1B, G2, G2B)
 
-        self.B1 -= 0.1 * G1B
-        self.B2 -= 0.015 * G2B
+        # Batch
+        self.W1 -= self.rateW1 * G1
+        self.W2 -= self.rateW2 * G2
+        self.B1 -= self.rateB1 * G1B
+        self.B2 -= self.rateB2 * G2B
 
 
 # Get MNIST Data
 (X_train, y_train), (X_test, y_test) = load_data()
 
-X = X_train.reshape(len(X_train), -1).astype('float64')
-y = y_train.reshape(len(X_train), -1)
+# Reshape
+X_train = X_train.reshape(len(X_train), -1).astype('float64')
+y_train = y_train.reshape(len(y_train), -1)
 
-X = X[:2000].astype('float64')
-y = y[:2000]
+X_test = X_test.reshape(len(X_test), -1).astype('float64')
+y_test = y_test.reshape(len(y_test), -1)
 
 # Scale
-X /= 255
-y = Math.hot_encoding(y)
+X_train /= 255
+X_test /= 255
 
 
 # NN
-network = Network(784, 100, 10, epochs=500, gradient_descent='default')
-network.fit(X, y, True)
+network = Network(784, 100, 10, epochs=1000, gradient_descent='stochastic')
+network.fit(X_train, Math.hot_encoding(y_train), True)
 
 
 # Confusion Matrix and evaluation
-# Test data
-X = X_test.reshape(len(X_test), -1).astype('float64')
-y = y_test.reshape(len(y_test), -1)
-
-X = X[:1000].astype('float64')
-y = y[:1000]
-
-# Scale
-X /= 255
-
 # Predict
-y_pred = network.predict(X)
-y_pred = y_pred.argmax(1).reshape(-1, 1)
+y_pred = network.predict(X_test, True)
 
 # Test set accuracy
-count = y_pred[y_pred == y].size
+count = y_pred[y_pred == y_test].size
 accuracy = count / y_pred.size
 print(f"Accuracy: {accuracy}")
 
 # Display matrix
-ConfusionMatrixDisplay.from_predictions(y, y_pred)
+ConfusionMatrixDisplay.from_predictions(y_test, y_pred)
 plt.title(f"Testing Data Set\nAccuracy: {accuracy * 100}%", fontdict={'fontweight': 'bold'})
 plt.show()

@@ -28,7 +28,7 @@ network = Network(784, [
     Layer(500, 'relu'),
     Layer(300, 'relu'),
     Layer(300, 'relu'),
-    Layer(10, 'sigmoid'),
+    Layer(10, 'softmax'),
     ], optimizer=Adam(), loss_function='bce', 
     epochs=5, sample_ratio=0.01)
 

@@ -53,7 +53,6 @@ def sigmoid(Y: np.ndarray) -> np.ndarray:
         Z: Result.
     """
 
-    Y = Y.copy()
     Z = 1 / (1 + np.exp(-Y))
     return Z
 
@@ -68,11 +67,12 @@ def sigmoid_derivative(Y: np.ndarray) -> np.ndarray:
         Z: Result.
     """
 
-    Z = sigmoid(Y) * ((1) - sigmoid(Y))
+    Y = sigmoid(Y)
+    Z = Y * ((1) - Y)
     return Z
 
 
-# TODO
+@njit
 def softmax(Y: np.ndarray) -> np.ndarray:
     """Softmax function.
 
@@ -83,11 +83,12 @@ def softmax(Y: np.ndarray) -> np.ndarray:
         Z: Result.
     """
 
-    Y = Y.copy()
-    Z = 1 / (1 + np.exp(-Y))
+    Y = np.exp(Y)
+    S = Y.sum(1).reshape(-1, 1)
+    Z = Y / S
     return Z
 
-# TODO
+@njit
 def softmax_derivative(Y: np.ndarray) -> np.ndarray:
     """Softmax derivative function.
 
@@ -98,7 +99,8 @@ def softmax_derivative(Y: np.ndarray) -> np.ndarray:
         Z: Result.
     """
 
-    Z = sigmoid(Y) * (1 - sigmoid(Y))
+    Y = softmax(Y)
+    Z = Y * ((1) - Y)
     return Z
 
 

@@ -10,7 +10,7 @@ from sklearn.utils import resample
 class Layer:
     """Layer class."""
 
-    def __init__(self, size: int, activation_function: Union[Literal['relu'], Literal['sigmoid']]) -> None:
+    def __init__(self, size: int, activation_function: Union[Literal['relu'], Literal['sigmoid'], Literal['softmax']]) -> None:
         """Layer constructor.
         
         Args:
@@ -31,6 +31,10 @@ class Layer:
             self.function = Math.sigmoid
             self.derivative = Math.sigmoid_derivative
 
+        elif self.activation_function == 'softmax':
+            self.function = Math.softmax
+            self.derivative = Math.softmax_derivative
+
         else:
             raise Exception('Invalid activation function!')
 
@@ -43,12 +47,7 @@ class Layer:
         self.GB: Any = None
 
     def setup(self, input: int):
-        if self.activation_function == 'sigmoid':
-            # min = -1.0 / np.sqrt(input)
-            # max = 1.0 / np.sqrt(input)
-            # self.W = np.random.randn(input, self.size)
-            # self.W = min + self.W * (max - min)
-
+        if self.activation_function == 'sigmoid' or self.activation_function == 'softmax':
             min = -1 * (np.sqrt(6.0) / np.sqrt(input + self.size))
             max = (np.sqrt(6.0) / np.sqrt(input + self.size))
             self.W = np.random.randn(input, self.size)
